@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\User;
+use App\UserType;
 use Illuminate\Support\Facades\Auth;
 use App\Http\Controllers\Controller;
 
@@ -18,7 +19,7 @@ class AuthController extends Controller
         $this->middleware('jwt', ['except' => ['login', 'register']]);
     }
 
-    public function register()
+    public function register($type)
     {
         $validatedData = request()->validate([
             'first_name' => ['required'],
@@ -27,8 +28,9 @@ class AuthController extends Controller
             'password' => ['required', 'min:6'],
         ]);
         $validatedData['password'] = bcrypt($validatedData['password']);
-        User::create($validatedData);
-
+        $validatedData['active'] = $type == UserType::USER_TYPE_NORMAL;
+        $user = User::create($validatedData);
+        $user->assignRole($type);
         return $this->login();
     }
 
@@ -55,7 +57,14 @@ class AuthController extends Controller
      */
     public function me()
     {
-        return response()->json(auth()->user());
+        $user = auth()->user();
+        return response()->json([
+            'first_name' => $user->first_name,
+            'last_name' => $user->last_name,
+            'email' => $user->email,
+            'id' => $user->id,
+            'roles' => $user->getRoleNames()
+        ]);
     }
 
     /**
@@ -89,11 +98,19 @@ class AuthController extends Controller
      */
     protected function respondWithToken($token)
     {
+        if (auth()->user()->active) {
+            return response()->json([
+                'access_token' => $token,
+                'token_type' => 'bearer',
+                'expires_in' => auth()->factory()->getTTL() * 60
+            ]);
+        }
+
         return response()->json([
-            'access_token' => $token,
-            'token_type' => 'bearer',
-            'expires_in' => auth()->factory()->getTTL() * 60
+            'access_token' => null,
+            'message' => 'Your account needs to be approved by an admin'
         ]);
+
     }
 
 }
